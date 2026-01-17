@@ -1,0 +1,25 @@
+{
+    "ntp": {
+        "server": "",
+        "server_port": 0
+    },
+    "inbounds": [
+        {
+            "type": "trojan",
+            "tag": "trojan-in",
+            "listen": "127.0.0.1",
+            "listen_port": 4443,
+            "users": [
+                {
+                    "name": "sekai",
+                    "password": "8JCsPssfgS8tiRwiMlhARg=="
+                }
+            ],
+            "auth_api": "http://127.0.0.1:8888/auth",
+            "fallback": {
+                "server": "127.0.0.1",
+                "server_port": 8080
+            }
+        }
+    ]
+}

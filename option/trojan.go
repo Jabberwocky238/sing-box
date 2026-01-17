@@ -2,7 +2,8 @@ package option
 
 type TrojanInboundOptions struct {
 	ListenOptions
-	Users []TrojanUser `json:"users,omitempty"`
+	Users   []TrojanUser `json:"users,omitempty"`
+	AuthAPI string       `json:"auth_api,omitempty"`
 	InboundTLSOptionsContainer
 	Fallback        *ServerOptions            `json:"fallback,omitempty"`
 	FallbackForALPN map[string]*ServerOptions `json:"fallback_for_alpn,omitempty"`

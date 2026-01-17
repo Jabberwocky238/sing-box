@@ -1,9 +1,15 @@
 package trojan
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"io"
 	"net"
+	"net/http"
+	"time"
 
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/buf"
@@ -26,6 +32,7 @@ type Service[K comparable] struct {
 	handler         Handler
 	fallbackHandler N.TCPConnectionHandlerEx
 	logger          logger.ContextLogger
+	authAPI         string
 }
 
 func NewService[K comparable](handler Handler, fallbackHandler N.TCPConnectionHandlerEx, logger logger.ContextLogger) *Service[K] {
@@ -35,6 +42,7 @@ func NewService[K comparable](handler Handler, fallbackHandler N.TCPConnectionHa
 		handler:         handler,
 		fallbackHandler: fallbackHandler,
 		logger:          logger,
+		authAPI:         "",
 	}
 }
 
@@ -59,6 +67,68 @@ func (s *Service[K]) UpdateUsers(userList []K, passwordList []string) error {
 	return nil
 }
 
+func (s *Service[K]) SetAuthAPI(authAPI string) {
+	s.authAPI = authAPI
+}
+
+type authAPIRequest struct {
+	Auth      string `json:"auth"`
+	Addr      string `json:"addr"`
+	Timestamp int64  `json:"tx"`
+}
+
+type authAPIResponse struct {
+	OK bool   `json:"ok"`
+	ID string `json:"id"`
+}
+
+func (s *Service[K]) validateWithAPI(ctx context.Context, key [56]byte, addr string, tx time.Time) (K, error) {
+	var zero K
+
+	reqBody := authAPIRequest{
+		Auth:      hex.EncodeToString(key[:]),
+		Addr:      addr,
+		Timestamp: tx.Unix(),
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return zero, E.Cause(err, "marshal auth request")
+	}
+
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := httpClient.Post(s.authAPI, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return zero, E.Cause(err, "auth API request failed")
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return zero, E.Cause(err, "read auth API response")
+	}
+
+	var authResp authAPIResponse
+	err = json.Unmarshal(body, &authResp)
+	if err != nil {
+		return zero, E.Cause(err, "unmarshal auth API response")
+	}
+
+	if !authResp.OK {
+		return zero, E.New("auth API returned ok=false")
+	}
+
+	user := any(authResp.ID).(K)
+	// set s.keys and s.users for future use
+	s.users[user] = key
+	s.keys[key] = user
+
+	return user, nil
+}
+
 func (s *Service[K]) NewConnection(ctx context.Context, conn net.Conn, source M.Socksaddr, onClose N.CloseHandlerFunc) error {
 	var key [KeyLength]byte
 	n, err := conn.Read(key[:])
@@ -68,10 +138,26 @@ func (s *Service[K]) NewConnection(ctx context.Context, conn net.Conn, source M.
 		return s.fallback(ctx, conn, source, key[:n], E.New("bad request size"), onClose)
 	}
 
-	if user, loaded := s.keys[key]; loaded {
-		ctx = auth.ContextWithUser(ctx, user)
+	var user K
+	var loaded bool
+
+	// 如果配置了外部 API 认证，优先使用 API 验证
+	if s.authAPI != "" {
+		user, err = s.validateWithAPI(ctx, key, source.String(), time.Now())
+		if err != nil {
+			return E.Cause(err, "validateWithAPI failed")
+		} else {
+			loaded = true
+		}
 	} else {
-		return s.fallback(ctx, conn, source, key[:], E.New("bad request"), onClose)
+		user, loaded = s.keys[key]
+		if !loaded {
+			return s.fallback(ctx, conn, source, key[:], E.New("bad request"), onClose)
+		}
+	}
+
+	if loaded {
+		ctx = auth.ContextWithUser(ctx, user)
 	}
 
 	err = rw.SkipN(conn, 2)
