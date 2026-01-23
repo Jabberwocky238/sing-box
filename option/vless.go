@@ -2,10 +2,16 @@ package option
 
 type VLESSInboundOptions struct {
 	ListenOptions
-	Users []VLESSUser `json:"users,omitempty"`
+	Users []VLESSUser       `json:"users,omitempty"`
+	Auth  *VlessAuthOptions `json:"auth,omitempty"`
 	InboundTLSOptionsContainer
 	Multiplex *InboundMultiplexOptions `json:"multiplex,omitempty"`
 	Transport *V2RayTransportOptions   `json:"transport,omitempty"`
+}
+
+type VlessAuthOptions struct {
+	Mode string `json:"mode,omitempty"`
+	API  string `json:"api,omitempty"`
 }
 
 type VLESSUser struct {

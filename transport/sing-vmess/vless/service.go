@@ -6,8 +6,9 @@ import (
 	"io"
 	"net"
 
+	"github.com/sagernet/sing-box/common/auth"
 	vmess "github.com/sagernet/sing-box/transport/sing-vmess"
-	"github.com/sagernet/sing/common/auth"
+	singauth "github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -19,10 +20,11 @@ import (
 )
 
 type Service[T comparable] struct {
-	userMap  map[[16]byte]T
-	userFlow map[T]string
-	logger   logger.Logger
-	handler  Handler
+	userMap       map[[16]byte]T
+	userFlow      map[T]string
+	logger        logger.Logger
+	handler       Handler
+	authenticator auth.Authenticator
 }
 
 type Handler interface {
@@ -35,6 +37,10 @@ func NewService[T comparable](logger logger.Logger, handler Handler) *Service[T]
 		logger:  logger,
 		handler: handler,
 	}
+}
+
+func (s *Service[T]) SetAuthenticator(authenticator auth.Authenticator) {
+	s.authenticator = authenticator
 }
 
 func (s *Service[T]) UpdateUsers(userList []T, userUUIDList []string, userFlowList []string) {
@@ -57,12 +63,35 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, source M.
 	if err != nil {
 		return err
 	}
-	user, loaded := s.userMap[request.UUID]
+
+	var authUserID string
+	var userFlow string
+	var loaded bool
+
+	if s.authenticator != nil {
+		result := s.authenticator.Authenticate(ctx, uuid.FromBytesOrNil(request.UUID[:]).String(), source.AddrString())
+		if result.OK {
+			authUserID = result.UserID
+			userFlow = request.Flow
+			loaded = true
+		}
+	} else {
+		var user T
+		user, loaded = s.userMap[request.UUID]
+		if loaded {
+			ctx = singauth.ContextWithUser(ctx, user)
+			userFlow = s.userFlow[user]
+		}
+	}
+
 	if !loaded {
 		return E.New("unknown UUID: ", uuid.FromBytesOrNil(request.UUID[:]))
 	}
-	ctx = auth.ContextWithUser(ctx, user)
-	userFlow := s.userFlow[user]
+
+	if authUserID != "" {
+		ctx = singauth.ContextWithUser(ctx, authUserID)
+	}
+
 	if request.Flow == FlowVision && request.Command == vmess.NetworkUDP {
 		return E.New(FlowVision, " flow does not support UDP")
 	} else if request.Flow != userFlow {
