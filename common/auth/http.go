@@ -47,6 +47,8 @@ func (a *HTTPAuthenticator) Authenticate(ctx context.Context, auth string, addr 
 		Timestamp: time.Now().Unix(),
 	}
 
+	a.logger.DebugContext(ctx, "auth request: ", addr, " auth=", auth[:min(8, len(auth))], "...")
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		a.logger.ErrorContext(ctx, "marshal auth request: ", err)
@@ -76,6 +78,12 @@ func (a *HTTPAuthenticator) Authenticate(ctx context.Context, auth string, addr 
 	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
 		a.logger.ErrorContext(ctx, "decode auth API response: ", err)
 		return AuthResult{OK: false}
+	}
+
+	if authResp.OK {
+		a.logger.InfoContext(ctx, "auth success: ", addr, " user=", authResp.ID)
+	} else {
+		a.logger.WarnContext(ctx, "auth failed: ", addr, " auth=", auth[:min(8, len(auth))], "...")
 	}
 
 	return AuthResult{

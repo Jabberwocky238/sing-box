@@ -16,6 +16,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/alidns"
 	"github.com/libdns/cloudflare"
+	"github.com/libdns/tencentcloud"
 	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -121,6 +122,11 @@ func startACME(ctx context.Context, logger logger.Logger, options option.Inbound
 		case C.DNSProviderCloudflare:
 			solver.DNSProvider = &cloudflare.Provider{
 				APIToken: dnsOptions.CloudflareOptions.APIToken,
+			}
+		case C.DNSProviderTencentCloud:
+			solver.DNSProvider = &tencentcloud.Provider{
+				SecretId:  dnsOptions.TencentCloudOptions.SecretId,
+				SecretKey: dnsOptions.TencentCloudOptions.SecretKey,
 			}
 		default:
 			return nil, nil, E.New("unsupported ACME DNS01 provider type: " + dnsOptions.Provider)

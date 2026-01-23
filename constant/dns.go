@@ -31,6 +31,7 @@ const (
 )
 
 const (
-	DNSProviderAliDNS     = "alidns"
-	DNSProviderCloudflare = "cloudflare"
+	DNSProviderAliDNS       = "alidns"
+	DNSProviderCloudflare   = "cloudflare"
+	DNSProviderTencentCloud = "tencentcloud"
 )

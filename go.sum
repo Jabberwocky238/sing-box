@@ -111,6 +111,8 @@ github.com/libdns/cloudflare v0.2.2-0.20250708034226-c574dccb31a6/go.mod h1:w9uT
 github.com/libdns/libdns v1.0.0-beta.1/go.mod h1:4Bj9+5CQiNMVGf87wjX4CY3HQJypUHRuLvlsfsZqLWQ=
 github.com/libdns/libdns v1.1.0 h1:9ze/tWvt7Df6sbhOJRB8jT33GHEHpEQXdtkE3hPthbU=
 github.com/libdns/libdns v1.1.0/go.mod h1:4Bj9+5CQiNMVGf87wjX4CY3HQJypUHRuLvlsfsZqLWQ=
+github.com/libdns/tencentcloud v1.4.3 h1:xJHYLL1TdPeOtUr6Bu6dHTd1TU6/VFm7BFc2EAzAlvc=
+github.com/libdns/tencentcloud v1.4.3/go.mod h1:Be9gY3tDa12DuAPU79RV9NZIcjY6qg5s7zKPsP26yAM=
 github.com/logrusorgru/aurora v2.0.3+incompatible h1:tOpm7WcpBTn4fjmVfgpQq0EfczGlG91VSDkswnjF5A8=
 github.com/logrusorgru/aurora v2.0.3+incompatible/go.mod h1:7rIyQOR62GCctdiQpZ/zOJlFyk6y+94wXzv6RNZgaR4=
 github.com/mdlayher/genetlink v1.3.2 h1:KdrNKe+CTu+IbZnm/GVUMXSqBBLqcGpRDa0xkQy56gw=
