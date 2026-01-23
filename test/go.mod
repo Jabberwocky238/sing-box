@@ -110,7 +110,7 @@ require (
 	github.com/sagernet/sing-mux v0.3.1 // indirect
 	github.com/sagernet/sing-shadowtls v0.2.1-0.20250316154757-6f9e732e5056 // indirect
 	github.com/sagernet/sing-tun v0.6.2-0.20250319123703-35b5747b44ec // indirect
-	github.com/sagernet/sing-vmess v0.2.0 // indirect
+	github.com/sagernet/sing-box/transport/sing-vmess v0.2.0 // indirect
 	github.com/sagernet/smux v0.0.0-20231208180855-7041f6ea79e7 // indirect
 	github.com/sagernet/tailscale v1.80.3-mod.0 // indirect
 	github.com/sagernet/utls v1.6.7 // indirect

@@ -1,17 +1,13 @@
 package trojan
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"io"
 	"net"
-	"net/http"
-	"time"
 
-	"github.com/sagernet/sing/common/auth"
+	"github.com/sagernet/sing-box/common/auth"
+	singauth "github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -32,7 +28,7 @@ type Service[K comparable] struct {
 	handler         Handler
 	fallbackHandler N.TCPConnectionHandlerEx
 	logger          logger.ContextLogger
-	authAPI         string
+	authenticator   auth.Authenticator
 }
 
 func NewService[K comparable](handler Handler, fallbackHandler N.TCPConnectionHandlerEx, logger logger.ContextLogger) *Service[K] {
@@ -42,7 +38,6 @@ func NewService[K comparable](handler Handler, fallbackHandler N.TCPConnectionHa
 		handler:         handler,
 		fallbackHandler: fallbackHandler,
 		logger:          logger,
-		authAPI:         "",
 	}
 }
 
@@ -67,66 +62,8 @@ func (s *Service[K]) UpdateUsers(userList []K, passwordList []string) error {
 	return nil
 }
 
-func (s *Service[K]) SetAuthAPI(authAPI string) {
-	s.authAPI = authAPI
-}
-
-type authAPIRequest struct {
-	Auth      string `json:"auth"`
-	Addr      string `json:"addr"`
-	Timestamp int64  `json:"tx"`
-}
-
-type authAPIResponse struct {
-	OK bool   `json:"ok"`
-	ID string `json:"id"`
-}
-
-func (s *Service[K]) validateWithAPI(ctx context.Context, key [56]byte, addr string, tx time.Time) (K, error) {
-	var zero K
-
-	reqBody := authAPIRequest{
-		Auth:      hex.EncodeToString(key[:]),
-		Addr:      addr,
-		Timestamp: tx.Unix(),
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return zero, E.Cause(err, "marshal auth request")
-	}
-
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := httpClient.Post(s.authAPI, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return zero, E.Cause(err, "auth API request failed")
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return zero, E.Cause(err, "read auth API response")
-	}
-
-	var authResp authAPIResponse
-	err = json.Unmarshal(body, &authResp)
-	if err != nil {
-		return zero, E.Cause(err, "unmarshal auth API response")
-	}
-
-	if !authResp.OK {
-		return zero, E.New("auth API returned ok=false")
-	}
-
-	user := any(authResp.ID).(K)
-	// set s.keys and s.users for future use
-	s.users[user] = key
-	s.keys[key] = user
-
-	return user, nil
+func (s *Service[K]) SetAuthenticator(authenticator auth.Authenticator) {
+	s.authenticator = authenticator
 }
 
 func (s *Service[K]) NewConnection(ctx context.Context, conn net.Conn, source M.Socksaddr, onClose N.CloseHandlerFunc) error {
@@ -140,24 +77,26 @@ func (s *Service[K]) NewConnection(ctx context.Context, conn net.Conn, source M.
 
 	var user K
 	var loaded bool
+	var authUserID string
 
-	// 如果配置了外部 API 认证，优先使用 API 验证
-	if s.authAPI != "" {
-		user, err = s.validateWithAPI(ctx, key, source.String(), time.Now())
-		if err != nil {
-			return E.Cause(err, "validateWithAPI failed")
-		} else {
+	if s.authenticator != nil {
+		result := s.authenticator.Authenticate(ctx, hex.EncodeToString(key[:]), source.AddrString())
+		if result.OK {
+			authUserID = result.UserID
 			loaded = true
 		}
 	} else {
 		user, loaded = s.keys[key]
-		if !loaded {
-			return s.fallback(ctx, conn, source, key[:], E.New("bad request"), onClose)
-		}
 	}
 
-	if loaded {
-		ctx = auth.ContextWithUser(ctx, user)
+	if !loaded {
+		return s.fallback(ctx, conn, source, key[:], E.New("bad request"), onClose)
+	}
+
+	if authUserID != "" {
+		ctx = singauth.ContextWithUser(ctx, authUserID)
+	} else {
+		ctx = singauth.ContextWithUser(ctx, user)
 	}
 
 	err = rw.SkipN(conn, 2)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
+	"github.com/sagernet/sing-box/common/auth"
 	"github.com/sagernet/sing-box/common/listener"
 	"github.com/sagernet/sing-box/common/mux"
 	"github.com/sagernet/sing-box/common/tls"
@@ -16,7 +17,7 @@ import (
 	"github.com/sagernet/sing-box/transport/trojan"
 	"github.com/sagernet/sing-box/transport/v2ray"
 	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/auth"
+	singauth "github.com/sagernet/sing/common/auth"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
 	M "github.com/sagernet/sing/common/metadata"
@@ -36,7 +37,6 @@ type Inbound struct {
 	listener                 *listener.Listener
 	service                  *trojan.Service[int]
 	users                    []option.TrojanUser
-	authApi                  string
 	tlsConfig                tls.ServerConfig
 	fallbackAddr             M.Socksaddr
 	fallbackAddrTLSNextProto map[string]M.Socksaddr
@@ -49,7 +49,6 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		router:  router,
 		logger:  logger,
 		users:   options.Users,
-		authApi: options.AuthAPI,
 	}
 	if options.TLS != nil {
 		tlsConfig, err := tls.NewServer(ctx, logger, common.PtrValueOrDefault(options.TLS))
@@ -84,9 +83,8 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	}
 	service := trojan.NewService[int](adapter.NewUpstreamContextHandlerEx(inbound.newConnection, inbound.newPacketConnection), fallbackHandler, logger)
 
-	// 设置外部 API 认证
-	if options.AuthAPI != "" {
-		service.SetAuthAPI(options.AuthAPI)
+	if options.Auth != nil && options.Auth.Mode == "http" {
+		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger))
 	}
 
 	err := service.UpdateUsers(common.MapIndexed(options.Users, func(index int, it option.TrojanUser) int {
@@ -186,17 +184,23 @@ func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, metadata a
 func (h *Inbound) newConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	metadata.Inbound = h.Tag()
 	metadata.InboundType = h.Type()
-	userIndex, loaded := auth.UserFromContext[int](ctx)
-	if !loaded {
+
+	var user string
+	if userID, loaded := singauth.UserFromContext[string](ctx); loaded {
+		user = userID
+		metadata.User = user
+	} else if userIndex, loaded := singauth.UserFromContext[int](ctx); loaded {
+		user = h.users[userIndex].Name
+		if user == "" {
+			user = F.ToString(userIndex)
+		} else {
+			metadata.User = user
+		}
+	} else {
 		N.CloseOnHandshakeFailure(conn, onClose, os.ErrInvalid)
 		return
 	}
-	user := h.users[userIndex].Name
-	if user == "" {
-		user = F.ToString(userIndex)
-	} else {
-		metadata.User = user
-	}
+
 	h.logger.InfoContext(ctx, "[", user, "] inbound connection to ", metadata.Destination)
 	h.router.RouteConnectionEx(ctx, conn, metadata, onClose)
 }
@@ -204,17 +208,23 @@ func (h *Inbound) newConnection(ctx context.Context, conn net.Conn, metadata ada
 func (h *Inbound) newPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	metadata.Inbound = h.Tag()
 	metadata.InboundType = h.Type()
-	userIndex, loaded := auth.UserFromContext[int](ctx)
-	if !loaded {
+
+	var user string
+	if userID, loaded := singauth.UserFromContext[string](ctx); loaded {
+		user = userID
+		metadata.User = user
+	} else if userIndex, loaded := singauth.UserFromContext[int](ctx); loaded {
+		user = h.users[userIndex].Name
+		if user == "" {
+			user = F.ToString(userIndex)
+		} else {
+			metadata.User = user
+		}
+	} else {
 		N.CloseOnHandshakeFailure(conn, onClose, os.ErrInvalid)
 		return
 	}
-	user := h.users[userIndex].Name
-	if user == "" {
-		user = F.ToString(userIndex)
-	} else {
-		metadata.User = user
-	}
+
 	h.logger.InfoContext(ctx, "[", user, "] inbound packet connection to ", metadata.Destination)
 	h.router.RoutePacketConnectionEx(ctx, conn, metadata, onClose)
 }
