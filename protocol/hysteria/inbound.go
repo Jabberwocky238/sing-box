@@ -12,7 +12,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-quic/hysteria"
+	"github.com/sagernet/sing-box/transport/sing-quic/hysteria"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	M "github.com/sagernet/sing/common/metadata"

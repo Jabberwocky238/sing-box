@@ -14,7 +14,7 @@ require (
 	github.com/gofrs/uuid/v5 v5.3.1
 	github.com/sagernet/quic-go v0.49.0-beta.1
 	github.com/sagernet/sing v0.6.4-0.20250319121229-11d8838dc56d
-	github.com/sagernet/sing-quic v0.4.1-beta.1
+	github.com/sagernet/sing-box/transport/sing-quic/ v0.4.1-beta.1
 	github.com/sagernet/sing-shadowsocks v0.2.7
 	github.com/sagernet/sing-shadowsocks2 v0.2.0
 	github.com/spyzhov/ajson v0.9.4

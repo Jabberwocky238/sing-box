@@ -10,15 +10,16 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
+	"github.com/sagernet/sing-box/common/auth"
 	"github.com/sagernet/sing-box/common/listener"
 	"github.com/sagernet/sing-box/common/tls"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-quic/hysteria"
-	"github.com/sagernet/sing-quic/hysteria2"
+	"github.com/sagernet/sing-box/transport/sing-quic/hysteria"
+	"github.com/sagernet/sing-box/transport/sing-quic/hysteria2"
 	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/auth"
+	singauth "github.com/sagernet/sing/common/auth"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -138,6 +139,9 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		userPasswordList = append(userPasswordList, user.Password)
 	}
 	service.UpdateUsers(userList, userPasswordList)
+	if options.Auth != nil && options.Auth.Mode == "http" {
+		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger))
+	}
 	inbound.service = service
 	inbound.userNameList = userNameList
 	return inbound, nil
@@ -156,10 +160,16 @@ func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, source M.S
 	metadata.Source = source
 	metadata.Destination = destination
 	h.logger.InfoContext(ctx, "inbound connection from ", metadata.Source)
-	userID, _ := auth.UserFromContext[int](ctx)
-	if userName := h.userNameList[userID]; userName != "" {
-		metadata.User = userName
-		h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
+	if userID, loaded := singauth.UserFromContext[string](ctx); loaded {
+		metadata.User = userID
+		h.logger.InfoContext(ctx, "[", userID, "] inbound connection to ", metadata.Destination)
+	} else if userIndex, loaded := singauth.UserFromContext[int](ctx); loaded && userIndex < len(h.userNameList) {
+		if userName := h.userNameList[userIndex]; userName != "" {
+			metadata.User = userName
+			h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
+		} else {
+			h.logger.InfoContext(ctx, "inbound connection to ", metadata.Destination)
+		}
 	} else {
 		h.logger.InfoContext(ctx, "inbound connection to ", metadata.Destination)
 	}
@@ -179,10 +189,16 @@ func (h *Inbound) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, 
 	metadata.Source = source
 	metadata.Destination = destination
 	h.logger.InfoContext(ctx, "inbound packet connection from ", metadata.Source)
-	userID, _ := auth.UserFromContext[int](ctx)
-	if userName := h.userNameList[userID]; userName != "" {
-		metadata.User = userName
-		h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
+	if userID, loaded := singauth.UserFromContext[string](ctx); loaded {
+		metadata.User = userID
+		h.logger.InfoContext(ctx, "[", userID, "] inbound packet connection to ", metadata.Destination)
+	} else if userIndex, loaded := singauth.UserFromContext[int](ctx); loaded && userIndex < len(h.userNameList) {
+		if userName := h.userNameList[userIndex]; userName != "" {
+			metadata.User = userName
+			h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
+		} else {
+			h.logger.InfoContext(ctx, "inbound packet connection to ", metadata.Destination)
+		}
 	} else {
 		h.logger.InfoContext(ctx, "inbound packet connection to ", metadata.Destination)
 	}

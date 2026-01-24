@@ -14,6 +14,7 @@ require (
 	github.com/insomniacslk/dhcp v0.0.0-20250417080101-5f8cf70e8c5f
 	github.com/libdns/alidns v1.0.5-libdns.v1.beta1
 	github.com/libdns/cloudflare v0.2.2-0.20250708034226-c574dccb31a6
+	github.com/libdns/tencentcloud v1.4.3
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/metacubex/tfo-go v0.0.0-20250921095601-b102db4216c0
 	github.com/metacubex/utls v1.8.4
@@ -29,7 +30,6 @@ require (
 	github.com/sagernet/quic-go v0.52.0-sing-box-mod.3
 	github.com/sagernet/sing v0.7.14
 	github.com/sagernet/sing-mux v0.3.4
-	github.com/sagernet/sing-quic v0.5.2
 	github.com/sagernet/sing-shadowsocks v0.2.8
 	github.com/sagernet/sing-shadowsocks2 v0.2.1
 	github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11
@@ -94,7 +94,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a // indirect
 	github.com/libdns/libdns v1.1.0 // indirect
-	github.com/libdns/tencentcloud v1.4.3 // indirect
 	github.com/mdlayher/genetlink v1.3.2 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/sdnotify v1.0.0 // indirect

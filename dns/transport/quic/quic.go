@@ -13,7 +13,7 @@ import (
 	"github.com/sagernet/sing-box/dns/transport"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	sQUIC "github.com/sagernet/sing-quic"
+	sQUIC "github.com/sagernet/sing-box/transport/sing-quic"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
