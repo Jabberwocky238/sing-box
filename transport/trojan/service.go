@@ -3,7 +3,6 @@ package trojan
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"net"
 
 	"github.com/sagernet/sing-box/common/auth"
@@ -80,7 +79,7 @@ func (s *Service[K]) NewConnection(ctx context.Context, conn net.Conn, source M.
 	var authUserID string
 
 	if s.authenticator != nil {
-		result := s.authenticator.Authenticate(ctx, hex.EncodeToString(key[:]), source.AddrString())
+		result := s.authenticator.Authenticate(ctx, string(key[:]), source.AddrString())
 		if result.OK {
 			authUserID = result.UserID
 			loaded = true

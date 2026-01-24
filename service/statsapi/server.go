@@ -35,6 +35,7 @@ type Service struct {
 	tlsConfig  tls.ServerConfig
 	httpServer *http.Server
 	tracker    *Tracker
+	authToken  string
 }
 
 func NewService(ctx context.Context, logger log.ContextLogger, tag string, options option.StatsAPIServiceOptions) (adapter.Service, error) {
@@ -53,6 +54,11 @@ func NewService(ctx context.Context, logger log.ContextLogger, tag string, optio
 		}),
 		httpServer: &http.Server{Handler: chiRouter},
 		tracker:    tracker,
+		authToken:  options.AuthToken,
+	}
+
+	if s.authToken != "" {
+		chiRouter.Use(s.authMiddleware)
 	}
 
 	chiRouter.Get("/stats", s.getStats)
@@ -106,6 +112,17 @@ func (s *Service) Close() error {
 		common.PtrOrNil(s.listener),
 		s.tlsConfig,
 	)
+}
+
+func (s *Service) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token != s.authToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Service) getStats(w http.ResponseWriter, r *http.Request) {
