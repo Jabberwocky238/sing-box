@@ -18,21 +18,16 @@ type Counter struct {
 	Download *atomic.Int64
 }
 
-type UserCounter struct {
-	Counter
-	Protocol string
-}
-
 type Tracker struct {
 	access   sync.RWMutex
 	inbounds map[string]*Counter
-	users    map[string]*UserCounter
+	users    map[string]map[string]*Counter // user -> protocol -> counter
 }
 
 func NewTracker() *Tracker {
 	return &Tracker{
 		inbounds: make(map[string]*Counter),
-		users:    make(map[string]*UserCounter),
+		users:    make(map[string]map[string]*Counter),
 	}
 }
 
@@ -53,22 +48,24 @@ func (t *Tracker) getOrCreateCounter(m map[string]*Counter, key string) *Counter
 	return counter
 }
 
-func (t *Tracker) getOrCreateUserCounter(user string, protocol string) *UserCounter {
-	if user == "" {
+func (t *Tracker) getOrCreateUserCounter(user string, protocol string) *Counter {
+	if user == "" || protocol == "" {
 		return nil
 	}
 	t.access.Lock()
 	defer t.access.Unlock()
-	counter, ok := t.users[user]
+	protocolMap, ok := t.users[user]
 	if !ok {
-		counter = &UserCounter{
-			Counter: Counter{
-				Upload:   &atomic.Int64{},
-				Download: &atomic.Int64{},
-			},
-			Protocol: protocol,
+		protocolMap = make(map[string]*Counter)
+		t.users[user] = protocolMap
+	}
+	counter, ok := protocolMap[protocol]
+	if !ok {
+		counter = &Counter{
+			Upload:   &atomic.Int64{},
+			Download: &atomic.Int64{},
 		}
-		t.users[user] = counter
+		protocolMap[protocol] = counter
 	}
 	return counter
 }
@@ -112,17 +109,21 @@ func (t *Tracker) RoutedPacketConnection(ctx context.Context, conn N.PacketConn,
 }
 
 type StatsEntry struct {
+	Upload   int64 `json:"upload"`
+	Download int64 `json:"download"`
+}
+
+type StatsInboundEntry struct {
 	Tag      string `json:"tag"`
-	Protocol string `json:"protocol,omitempty"`
 	Upload   int64  `json:"upload"`
 	Download int64  `json:"download"`
 }
 
-func (t *Tracker) GetInboundStats(clear bool) []StatsEntry {
+func (t *Tracker) GetInboundStats(clear bool) []StatsInboundEntry {
 	t.access.RLock()
 	defer t.access.RUnlock()
 
-	result := make([]StatsEntry, 0, len(t.inbounds))
+	result := make([]StatsInboundEntry, 0, len(t.inbounds))
 	for tag, counter := range t.inbounds {
 		var up, down int64
 		if clear {
@@ -133,28 +134,39 @@ func (t *Tracker) GetInboundStats(clear bool) []StatsEntry {
 			down = counter.Download.Load()
 		}
 		if up > 0 || down > 0 {
-			result = append(result, StatsEntry{Tag: tag, Upload: up, Download: down})
+			result = append(result, StatsInboundEntry{Tag: tag, Upload: up, Download: down})
 		}
 	}
 	return result
 }
 
-func (t *Tracker) GetUserStats(clear bool) []StatsEntry {
+type StatsUserEntry struct {
+	Email     string                `json:"email"`
+	Protocols map[string]StatsEntry `json:"protocols"`
+}
+
+func (t *Tracker) GetUserStats(clear bool) []StatsUserEntry {
 	t.access.RLock()
 	defer t.access.RUnlock()
 
-	result := make([]StatsEntry, 0, len(t.users))
-	for tag, counter := range t.users {
-		var up, down int64
-		if clear {
-			up = counter.Upload.Swap(0)
-			down = counter.Download.Swap(0)
-		} else {
-			up = counter.Upload.Load()
-			down = counter.Download.Load()
-		}
-		if up > 0 || down > 0 {
-			result = append(result, StatsEntry{Tag: tag, Protocol: counter.Protocol, Upload: up, Download: down})
+	var result []StatsUserEntry
+	for user, protocolMap := range t.users {
+		result = append(result, StatsUserEntry{
+			Email:     user,
+			Protocols: make(map[string]StatsEntry),
+		})
+		for protocol, counter := range protocolMap {
+			var up, down int64
+			if clear {
+				up = counter.Upload.Swap(0)
+				down = counter.Download.Swap(0)
+			} else {
+				up = counter.Upload.Load()
+				down = counter.Download.Load()
+			}
+			if up > 0 || down > 0 {
+				result[len(result)-1].Protocols[protocol] = StatsEntry{Upload: up, Download: down}
+			}
 		}
 	}
 	return result
