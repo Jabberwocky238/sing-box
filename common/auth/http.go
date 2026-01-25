@@ -21,26 +21,49 @@ type httpAuthResponse struct {
 	ID string `json:"id"`
 }
 
+type cachedAuthResult struct {
+	id        string
+	timestamp time.Time
+}
+
 // HTTPAuthenticator implements Authenticator using HTTP API
 type HTTPAuthenticator struct {
-	endpoint string
-	client   *http.Client
-	logger   logger.ContextLogger
+	endpoint    string
+	client      *http.Client
+	logger      logger.ContextLogger
+	cacheExpiry time.Duration
+
+	cache map[string]cachedAuthResult
 }
 
 // NewHTTPAuthenticator creates a new HTTP-based authenticator
-func NewHTTPAuthenticator(endpoint string, logger logger.ContextLogger) *HTTPAuthenticator {
+func NewHTTPAuthenticator(endpoint string, logger logger.ContextLogger, cacheExpiry time.Duration) *HTTPAuthenticator {
 	return &HTTPAuthenticator{
 		endpoint: endpoint,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		logger: logger,
+		logger:      logger,
+		cacheExpiry: cacheExpiry,
+		cache:       make(map[string]cachedAuthResult),
 	}
 }
 
 // Authenticate validates credentials via HTTP API
 func (a *HTTPAuthenticator) Authenticate(ctx context.Context, auth string, addr string) AuthResult {
+	// Check cache first
+	if a.cacheExpiry > 0 {
+		if cached, found := a.cache[auth]; found {
+			if time.Since(cached.timestamp) < a.cacheExpiry {
+				a.logger.DebugContext(ctx, "auth cache hit: ", addr, " auth=", auth[:min(8, len(auth))], "...")
+				return AuthResult{
+					OK:     true,
+					UserID: cached.id,
+				}
+			}
+		}
+	}
+
 	reqBody := httpAuthRequest{
 		Auth:      auth,
 		Addr:      addr,

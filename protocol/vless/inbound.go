@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
@@ -62,7 +63,8 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	service := vless.NewService[int](logger, adapter.NewUpstreamContextHandlerEx(inbound.newConnectionEx, inbound.newPacketConnectionEx))
 
 	if options.Auth != nil && options.Auth.Mode == "http" {
-		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger))
+		expireSeconds := max(options.Auth.CacheExpirySeconds, 0)
+		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger, time.Duration(expireSeconds)*time.Second))
 	}
 
 	service.UpdateUsers(common.MapIndexed(inbound.users, func(index int, _ option.VLESSUser) int {

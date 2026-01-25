@@ -12,20 +12,15 @@ import (
 
 type Hysteria2InboundOptions struct {
 	ListenOptions
-	UpMbps                int                   `json:"up_mbps,omitempty"`
-	DownMbps              int                   `json:"down_mbps,omitempty"`
-	Obfs                  *Hysteria2Obfs        `json:"obfs,omitempty"`
-	Users                 []Hysteria2User       `json:"users,omitempty"`
-	Auth                  *Hysteria2AuthOptions `json:"auth,omitempty"`
-	IgnoreClientBandwidth bool                  `json:"ignore_client_bandwidth,omitempty"`
+	UpMbps                int             `json:"up_mbps,omitempty"`
+	DownMbps              int             `json:"down_mbps,omitempty"`
+	Obfs                  *Hysteria2Obfs  `json:"obfs,omitempty"`
+	Users                 []Hysteria2User `json:"users,omitempty"`
+	Auth                  *AuthOptions    `json:"auth,omitempty"`
+	IgnoreClientBandwidth bool            `json:"ignore_client_bandwidth,omitempty"`
 	InboundTLSOptionsContainer
 	Masquerade  *Hysteria2Masquerade `json:"masquerade,omitempty"`
 	BrutalDebug bool                 `json:"brutal_debug,omitempty"`
-}
-
-type Hysteria2AuthOptions struct {
-	Mode string `json:"mode,omitempty"`
-	API  string `json:"api,omitempty"`
 }
 
 type Hysteria2Obfs struct {

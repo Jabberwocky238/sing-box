@@ -140,7 +140,8 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	}
 	service.UpdateUsers(userList, userPasswordList)
 	if options.Auth != nil && options.Auth.Mode == "http" {
-		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger))
+		expireSeconds := max(options.Auth.CacheExpirySeconds, 0)
+		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger, time.Duration(expireSeconds)*time.Second))
 	}
 	inbound.service = service
 	inbound.userNameList = userNameList

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
@@ -84,7 +85,8 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	service := trojan.NewService[int](adapter.NewUpstreamContextHandlerEx(inbound.newConnection, inbound.newPacketConnection), fallbackHandler, logger)
 
 	if options.Auth != nil && options.Auth.Mode == "http" {
-		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger))
+		expireSeconds := max(options.Auth.CacheExpirySeconds, 0)
+		service.SetAuthenticator(auth.NewHTTPAuthenticator(options.Auth.API, logger, time.Duration(expireSeconds)*time.Second))
 	}
 
 	err := service.UpdateUsers(common.MapIndexed(options.Users, func(index int, it option.TrojanUser) int {
