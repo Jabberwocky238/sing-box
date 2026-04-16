@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sing-box
+---
+# 配置模板，${EXTERNAL_IP} 由 init container 替换为节点外部 IP（点号原样保留）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sing-box-config-template
+  namespace: sing-box
+data:
+  config.json.tpl: |
+    {
+        "log": {
+            "level": "info"
+        },
+        "inbounds": [
+            {
+                "type": "trojan",
+                "tag": "trojan-in",
+                "auth": {
+                    "mode": "http",
+                    "api": "https://app.enzyme.cloud/api/proxy/auth"
+                },
+                "listen": "0.0.0.0",
+                "listen_port": 4443,
+                "users": [],
+                "tls": {
+                    "enabled": true,
+                    "acme": {
+                        "domain": [
+                            "trotro${EXTERNAL_IP}.radio238.com"
+                        ],
+                        "email": "shadowsocks1984@gmail.com",
+                        "data_directory": "/var/lib/sing-box/acme",
+                        "dns01_challenge": {
+                            "provider": "tencentcloud",
+                            "secret_id": "${DNS_SECRET_ID}",
+                            "secret_key": "${DNS_SECRET_KEY}"
+                        }
+                    }
+                },
+                "fallback": {
+                    "server": "127.0.0.1",
+                    "server_port": 80
+                }
+            },
+            {
+                "type": "vless",
+                "tag": "vless-in",
+                "auth": {
+                    "mode": "http",
+                    "api": "https://app.enzyme.cloud/api/proxy/auth"
+                },
+                "listen": "0.0.0.0",
+                "listen_port": 8443,
+                "users": [],
+                "tls": {
+                    "enabled": true,
+                    "acme": {
+                        "domain": [
+                            "less${EXTERNAL_IP}.radio238.com"
+                        ],
+                        "email": "shadowsocks1984@gmail.com",
+                        "data_directory": "/var/lib/sing-box/acme",
+                        "dns01_challenge": {
+                            "provider": "tencentcloud",
+                            "secret_id": "${DNS_SECRET_ID}",
+                            "secret_key": "${DNS_SECRET_KEY}"
+                        }
+                    }
+                }
+            }
+        ],
+        "services": [
+            {
+                "type": "stats-api",
+                "tag": "stats",
+                "listen": "0.0.0.0",
+                "listen_port": 39999,
+                "auth_token": "Ae7RAuFZ8LzgAe7RAuFZ8LzgFUCKERSHITCO!@#!@#DDSSsdasdRTEX"
+            }
+        ]
+    }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sing-box
+  namespace: sing-box
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sing-box
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sing-box
+subjects:
+  - kind: ServiceAccount
+    name: sing-box
+    namespace: sing-box
+roleRef:
+  kind: ClusterRole
+  name: sing-box
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sing-box
+  namespace: sing-box
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sing-box
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sing-box
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: sing-box
+      initContainers:
+        - name: init-config
+          image: bitnami/kubectl:latest
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DNS_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tencentcloud-dns
+                  key: secret_id
+            - name: DNS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tencentcloud-dns
+                  key: secret_key
+          command: ["sh", "-c"]
+          args:
+            - |
+              EXTERNAL_IP=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['externalip']}")
+              if [ -z "$EXTERNAL_IP" ]; then
+                echo "ERROR: node $NODE_NAME has no ExternalIP label"
+                exit 1
+              fi
+              echo "Node $NODE_NAME ExternalIP: $EXTERNAL_IP"
+              export EXTERNAL_IP
+              envsubst < /etc/sing-box-template/config.json.tpl > /etc/sing-box/config.json
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/sing-box-template
+              readOnly: true
+            - name: config
+              mountPath: /etc/sing-box
+      containers:
+        - name: sing-box
+          image: ghcr.io/jabberwocky238/sing-box:latest
+          imagePullPolicy: Always
+          args:
+            - run
+            - -c
+            - /etc/sing-box/config.json
+          ports:
+            - name: trojan
+              containerPort: 4443
+              hostPort: 4443
+              protocol: TCP
+            - name: vless
+              containerPort: 8443
+              hostPort: 8443
+              protocol: TCP
+            - name: stats
+              containerPort: 39999
+              hostPort: 39999
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/sing-box
+              readOnly: true
+            - name: acme-data
+              mountPath: /var/lib/sing-box/acme
+      volumes:
+        - name: config-template
+          configMap:
+            name: sing-box-config-template
+        - name: config
+          emptyDir: {}
+        - name: acme-data
+          hostPath:
+            path: /var/lib/sing-box/acme
+            type: DirectoryOrCreate
