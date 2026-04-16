@@ -118,6 +118,10 @@ metadata:
   name: sing-box
   namespace: sing-box
 spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: sing-box
@@ -126,6 +130,13 @@ spec:
       labels:
         app.kubernetes.io/name: sing-box
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: externalip
+                    operator: Exists
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: sing-box
