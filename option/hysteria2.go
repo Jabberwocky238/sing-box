@@ -20,6 +20,7 @@ type Hysteria2InboundOptions struct {
 	DownMbps              int             `json:"down_mbps,omitempty"`
 	Obfs                  *Hysteria2Obfs  `json:"obfs,omitempty"`
 	Users                 []Hysteria2User `json:"users,omitempty"`
+	Auth                  *AuthOptions    `json:"auth,omitempty"`
 	IgnoreClientBandwidth bool            `json:"ignore_client_bandwidth,omitempty"`
 	InboundTLSOptionsContainer
 	QUICOptions

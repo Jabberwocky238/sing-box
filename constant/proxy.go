@@ -34,6 +34,7 @@ const (
 	TypeDERP               = "derp"
 	TypeResolved           = "resolved"
 	TypeSSMAPI             = "ssm-api"
+	TypeStatsAPI           = "stats-api"
 	TypeAPI                = "api"
 	TypeCCM                = "ccm"
 	TypeOCM                = "ocm"

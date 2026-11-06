@@ -48,7 +48,15 @@ type ServiceOptions struct {
 	MasqueradeHandler     http.Handler
 	BBRProfile            string
 	RealmOptions          *realm.Options
+	// Authenticator is consulted when the password is not in the static user list.
+	// It returns the context used for every stream of the session (carrying the
+	// user identity), and a release callback invoked when the session ends.
+	// Cancelling the returned context closes the whole QUIC session.
+	Authenticator Authenticator
 }
+
+// Authenticator authenticates a hysteria2 session against an external source.
+type Authenticator func(ctx context.Context, password string, source M.Socksaddr) (sessionCtx context.Context, release func(), ok bool)
 
 type ServerHandler interface {
 	N.TCPConnectionHandlerEx
@@ -76,6 +84,7 @@ type Service[U comparable] struct {
 	quicListener          io.Closer
 	bbrProfile            congestion_meta2.Profile
 	realmServer           *realm.Server
+	authenticator         Authenticator
 }
 
 func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
@@ -145,6 +154,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		masqueradeHandler:     options.MasqueradeHandler,
 		bbrProfile:            bbrProfile,
 		realmServer:           realmServer,
+		authenticator:         options.Authenticator,
 	}, nil
 }
 
@@ -253,6 +263,13 @@ func (s *Service[U]) handleConnection(connection *quic.Conn) {
 	}
 	_ = httpServer.ServeQUICConn(connection)
 	_ = connection.CloseWithError(0, "")
+	session.connAccess.Lock()
+	release := session.release
+	session.release = nil
+	session.connAccess.Unlock()
+	if release != nil {
+		release()
+	}
 }
 
 type serverSession[U comparable] struct {
@@ -264,6 +281,8 @@ type serverSession[U comparable] struct {
 	connErr       error
 	authenticated bool
 	authUser      U
+	externalAuth  bool
+	release       func()
 	udpAccess     sync.RWMutex
 	udpConnMap    map[uint32]*udpPacketConn
 }
@@ -281,11 +300,23 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		request := protocol.AuthRequestFromHeader(r.Header)
 		user, loaded := s.userMap[request.Auth]
-		if !loaded {
+		if loaded {
+			s.authUser = user
+		} else if s.authenticator != nil {
+			sessionCtx, release, ok := s.authenticator(s.ctx, request.Auth, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap())
+			if !ok {
+				s.masqueradeHandler.ServeHTTP(w, r)
+				return
+			}
+			s.connAccess.Lock()
+			s.ctx = sessionCtx
+			s.release = release
+			s.connAccess.Unlock()
+			s.externalAuth = true
+		} else {
 			s.masqueradeHandler.ServeHTTP(w, r)
 			return
 		}
-		s.authUser = user
 		s.authenticated = true
 		var rxAuto bool
 		if s.receiveBPS > 0 && s.ignoreClientBandwidth && request.Rx == 0 {
@@ -360,7 +391,7 @@ func (s *serverSession[U]) handleStream(stream *quic.Stream) error {
 	if len(destination.Fqdn) > 255 {
 		return E.New("fqdn too long")
 	}
-	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
+	s.handler.NewConnectionEx(s.userContext(), &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
 	return nil
 }
 
@@ -449,4 +480,11 @@ func (c *serverConn) Close() error {
 	// but a past write deadline does; buffered data and the FIN are unaffected.
 	c.Stream.SetWriteDeadline(time.Now())
 	return err
+}
+
+func (s *serverSession[U]) userContext() context.Context {
+	if s.externalAuth {
+		return s.ctx
+	}
+	return auth.ContextWithUser(s.ctx, s.authUser)
 }

@@ -12,9 +12,11 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
+	enzymeauth "github.com/sagernet/sing-box/common/auth"
 	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/common/listener"
 	"github.com/sagernet/sing-box/common/tls"
+	"github.com/sagernet/sing-box/common/usersession"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -180,6 +182,10 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 			}
 		}
 	}
+	externalAuthenticator, err := newExternalAuthenticator(ctx, logger, options.Auth)
+	if err != nil {
+		return nil, err
+	}
 	hysteriaService, err := hysteria2.NewService[int](hysteria2.ServiceOptions{
 		Context:            ctx,
 		Logger:             logger,
@@ -206,6 +212,7 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		MasqueradeHandler:     masqueradeHandler,
 		BBRProfile:            options.BBRProfile,
 		RealmOptions:          realmOptions,
+		Authenticator:         externalAuthenticator,
 	})
 	if err != nil {
 		return nil, err
@@ -236,8 +243,7 @@ func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, source M.S
 	metadata.Source = source
 	metadata.Destination = destination
 	h.logger.InfoContext(ctx, "inbound connection from ", metadata.Source)
-	userID, _ := auth.UserFromContext[int](ctx)
-	if userName := h.userNameList[userID]; userName != "" {
+	if userName := h.resolveUser(ctx); userName != "" {
 		metadata.User = userName
 		h.logger.InfoContext(ctx, "[", userName, "] inbound connection to ", metadata.Destination)
 	} else {
@@ -258,8 +264,7 @@ func (h *Inbound) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, 
 	metadata.Source = source
 	metadata.Destination = destination
 	h.logger.InfoContext(ctx, "inbound packet connection from ", metadata.Source)
-	userID, _ := auth.UserFromContext[int](ctx)
-	if userName := h.userNameList[userID]; userName != "" {
+	if userName := h.resolveUser(ctx); userName != "" {
 		metadata.User = userName
 		h.logger.InfoContext(ctx, "[", userName, "] inbound packet connection to ", metadata.Destination)
 	} else {
@@ -294,4 +299,43 @@ func (h *Inbound) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 
 func (h *Inbound) InterfaceUpdated(ctx context.Context) {
 	h.service.Reset()
+}
+
+// resolveUser returns the user name of a connection: the external (HTTP API)
+// identity when present, otherwise the static user list entry.
+func (h *Inbound) resolveUser(ctx context.Context) string {
+	if userName, loaded := auth.UserFromContext[string](ctx); loaded {
+		return userName
+	}
+	if userIndex, loaded := auth.UserFromContext[int](ctx); loaded && userIndex >= 0 && userIndex < len(h.userNameList) {
+		return h.userNameList[userIndex]
+	}
+	return ""
+}
+
+func newExternalAuthenticator(ctx context.Context, logger log.ContextLogger, options *option.AuthOptions) (hysteria2.Authenticator, error) {
+	if options == nil || options.Mode == "" {
+		return nil, nil
+	}
+	if options.Mode != "http" {
+		return nil, E.New("unknown auth mode: ", options.Mode)
+	}
+	if options.API == "" {
+		return nil, E.New("missing auth api")
+	}
+	authenticator := enzymeauth.NewHTTPAuthenticator(options.API, logger, time.Duration(max(options.CacheExpirySeconds, 0))*time.Second)
+	sessions := usersession.FromContext(ctx)
+	sessions.OnKick(authenticator.Invalidate)
+	return func(ctx context.Context, password string, source M.Socksaddr) (context.Context, func(), bool) {
+		userName, ok := authenticator.Authenticate(ctx, password, source.String())
+		if !ok {
+			return nil, nil, false
+		}
+		if sessions.Banned(userName) {
+			logger.WarnContext(ctx, "refused banned user ", userName, " from ", source)
+			return nil, nil, false
+		}
+		sessionCtx, release := sessions.Open(ctx, userName)
+		return auth.ContextWithUser(sessionCtx, userName), release, true
+	}, nil
 }
